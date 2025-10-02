@@ -192,14 +192,24 @@ class EyeBreakTimer:
                         elapsed = 0
                         cycle = 1
                 
+                # Para a thread de monitoramento antes da pausa
+                self.running = False
+                time.sleep(0.5)  # Aguarda a thread terminar
+                
                 # Pausa obrigatória
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] ⏸️  PAUSA OBRIGATÓRIA!")
                 self.show_break_window()
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] ✓ Pausa concluída\n")
                 
+                # Reinicia o monitoramento
+                self.running = True
+                monitor_thread = threading.Thread(target=self.monitor_screen_lock, daemon=True)
+                monitor_thread.start()
+                
                 cycle += 1
                 
         except KeyboardInterrupt:
+            self.running = False
             print("\n\nScript encerrado pelo usuário.")
             print("Cuide bem dos seus olhos! 👁️")
 
