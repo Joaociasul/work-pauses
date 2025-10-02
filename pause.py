@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 Script de pausas obrigatórias para descanso visual
-Requer: tkinter, screeninfo
-Instalar: sudo apt install python3-tk python3-pip && pip3 install screeninfo
+Requer: tkinter, screeninfo, dbus-python
+Instalar: 
+    sudo apt install python3-tk python3-pip python3-dbus
+    pip3 install screeninfo
 
 Uso:
     python3 pausa_visual.py              # Modo normal (10 min trabalho, 30s pausa)
@@ -14,6 +16,8 @@ import tkinter as tk
 from tkinter import font
 import time
 import sys
+import subprocess
+import threading
 from datetime import datetime
 try:
     from screeninfo import get_monitors
@@ -35,6 +39,47 @@ class EyeBreakTimer:
             self.work_duration = 10 * 60  # 10 minutos em segundos
             self.break_duration = 30  # 30 segundos
         self.running = True
+        self.timer_reset = False
+        self.last_unlock_time = time.time()
+        
+    def is_screen_locked(self):
+        """Verifica se a tela está bloqueada (GNOME/Ubuntu)"""
+        try:
+            result = subprocess.run(
+                ['gnome-screensaver-command', '-q'],
+                capture_output=True,
+                text=True,
+                timeout=1
+            )
+            return 'inactive' not in result.stdout.lower()
+        except:
+            # Alternativa para sistemas mais novos
+            try:
+                result = subprocess.run(
+                    ['loginctl', 'show-session', '$(loginctl show-user $(whoami) -p Display --value)', '-p', 'LockedHint'],
+                    capture_output=True,
+                    text=True,
+                    shell=True,
+                    timeout=1
+                )
+                return 'yes' in result.stdout.lower()
+            except:
+                return False
+    
+    def monitor_screen_lock(self):
+        """Monitora o estado de bloqueio da tela em background"""
+        was_locked = False
+        while self.running:
+            is_locked = self.is_screen_locked()
+            
+            # Detecta quando a tela foi desbloqueada
+            if was_locked and not is_locked:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔓 Tela desbloqueada - Timer resetado!")
+                self.last_unlock_time = time.time()
+                self.timer_reset = True
+            
+            was_locked = is_locked
+            time.sleep(2)  # Verifica a cada 2 segundos
         
     def show_break_window(self):
         """Mostra janela de pausa discreta em todos os monitores"""
@@ -123,14 +168,29 @@ class EyeBreakTimer:
             pass
         
         print("=" * 60)
+        print("⚠️  Timer será resetado automaticamente ao desbloquear a tela")
         print("\nPressione Ctrl+C para encerrar\n")
+        
+        # Inicia thread de monitoramento de bloqueio de tela
+        monitor_thread = threading.Thread(target=self.monitor_screen_lock, daemon=True)
+        monitor_thread.start()
         
         try:
             cycle = 1
             while self.running:
-                # Período de trabalho
+                # Período de trabalho com verificação de reset
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] Ciclo {cycle}: Trabalhando...")
-                time.sleep(self.work_duration)
+                
+                elapsed = 0
+                while elapsed < self.work_duration:
+                    time.sleep(1)
+                    elapsed += 1
+                    
+                    # Verifica se o timer deve ser resetado
+                    if self.timer_reset:
+                        self.timer_reset = False
+                        elapsed = 0
+                        cycle = 1
                 
                 # Pausa obrigatória
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] ⏸️  PAUSA OBRIGATÓRIA!")
